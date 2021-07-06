@@ -579,20 +579,7 @@ namespace Miningcore.Blockchain.Bitcoin
 
         protected void ConfigureRewards()
         {
-            // Donation to MiningCore development
-            if(network.NetworkType == NetworkType.Mainnet &&
-                DevDonation.Addresses.TryGetValue(poolConfig.Template.Symbol, out var address))
-            {
-                poolConfig.RewardRecipients = poolConfig.RewardRecipients.Concat(new[]
-                {
-                    new RewardRecipient
-                    {
-                        Address = address,
-                        Percentage = DevDonation.Percent,
-                        Type = "dev"
-                    }
-                }).ToArray();
-            }
+
         }
 
         #region API-Surface

@@ -635,27 +635,42 @@ namespace Miningcore.Blockchain.Ethereum
 
         private void ConfigureRewards()
         {
-            // Donation to MiningCore development
-            if(networkType == EthereumNetworkType.Main &&
-                chainType == ParityChainType.Mainnet &&
-                DevDonation.Addresses.TryGetValue(poolConfig.Template.As<CoinTemplate>().Symbol, out var address))
-            {
-                poolConfig.RewardRecipients = poolConfig.RewardRecipients.Concat(new[]
-                {
-                    new RewardRecipient
-                    {
-                        Address = address,
-                        Percentage = DevDonation.Percent,
-                        Type = "dev"
-                    }
-                }).ToArray();
-            }
+
         }
 
         protected virtual async Task SetupJobUpdatesAsync()
         {
             if(extraPoolConfig?.BtStream == null)
             {
+                // Check for notifyWorkUrl config options
+                // If found, for now ignore all other parameters (e.g. blockRefreshInterval or wsStreaming)
+                var notifyWorkUrls = poolConfig.Daemons
+                    .Where(x => !string.IsNullOrEmpty(x.Extra.SafeExtensionDataAs<EthereumDaemonEndpointConfigExtra>()?.NotifyWorkUrl))
+                    .ToDictionary(x => x, x =>
+                    {
+                        var extra = x.Extra.SafeExtensionDataAs<EthereumDaemonEndpointConfigExtra>();
+                        return extra.NotifyWorkUrl;
+                    });
+
+                if (notifyWorkUrls.Count > 0)
+                {
+                    logger.Info(() => $"Subscribing to notify work push-updates from {string.Join(", ", notifyWorkUrls.Values)}");
+                    var getWorkObs = daemon.NotifyWorkSubscribe(logger, notifyWorkUrls);
+                    Jobs = getWorkObs.Where(x => x != null)
+                        .Select(AssembleBlockTemplate)
+                        .Select(UpdateJob)
+                        .Do(isNew =>
+                        {
+                            if(isNew)
+                                logger.Info(() => $"New work at height {currentJob.BlockTemplate.Height} and header {currentJob.BlockTemplate.Header} detected [{JobRefreshBy.NotifyWork}]");
+                        })
+                        .Where(isNew => isNew)
+                        .Select(_ => GetJobParamsForStratum(true))
+                        .Publish()
+                        .RefCount();
+                    return;
+                }
+
                 var enableStreaming = extraPoolConfig?.EnableDaemonWebsocketStreaming == true;
 
                 if(enableStreaming && !poolConfig.Daemons.Any(x =>
@@ -720,7 +735,7 @@ namespace Miningcore.Blockchain.Ethereum
                     retry:
 
                         // stream work updates
-                        var getWorkObs = daemon.WebsocketSubscribe(logger, wsDaemons, EC.Subscribe, new[] { (object) wsSubscription, new object() });
+                        var getWorkObs = daemon.WebsocketSubscribe(logger, wsDaemons, EC.Subscribe, new[] { (object) wsSubscription }); //, new object() });
 
                         // test subscription
                         var subcriptionResponse = await getWorkObs
@@ -733,6 +748,7 @@ namespace Miningcore.Blockchain.Ethereum
                             // older versions of geth only support subscriptions to "newBlocks"
                             if(!isRetry && subcriptionResponse.Error.Code == (int) BitcoinRPCErrorCode.RPC_METHOD_NOT_FOUND)
                             {
+                                logger.Error(() => $"Falling back from newHeads to newBlocks: {subcriptionResponse.Error}");
                                 wsSubscription = "newBlocks";
 
                                 isRetry = true;
