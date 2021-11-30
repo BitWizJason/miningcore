@@ -20,7 +20,6 @@ using McMaster.Extensions.CommandLineUtils;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -28,12 +27,10 @@ using Miningcore.Api;
 using Miningcore.Api.Controllers;
 using Miningcore.Api.Middlewares;
 using Miningcore.Api.Responses;
-using Miningcore.Blockchain.Ergo;
 using Miningcore.Configuration;
 using Miningcore.Crypto.Hashing.Algorithms;
 using Miningcore.Crypto.Hashing.Equihash;
 using Miningcore.Crypto.Hashing.Ethash;
-using Miningcore.Extensions;
 using Miningcore.Messaging;
 using Miningcore.Mining;
 using Miningcore.Native;
@@ -153,10 +150,15 @@ namespace Miningcore
                             // MVC
                             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
-                            services.AddMvc(options => { options.EnableEndpointRouting = false; })
-                                .SetCompatibilityVersion(CompatibilityVersion.Latest)
-                                .AddControllersAsServices()
-                                .AddJsonOptions(options => { options.JsonSerializerOptions.WriteIndented = true; });
+                            services.AddMvc(options =>
+                            {
+                                options.EnableEndpointRouting = false;
+                            })
+                            .AddControllersAsServices()
+                            .AddJsonOptions(options =>
+                            {
+                                options.JsonSerializerOptions.WriteIndented = true;
+                            });
 
                             // Gzip Compression
                             services.AddResponseCompression();
@@ -191,7 +193,6 @@ namespace Miningcore
                             app.MapWebSocketManager("/notifications", app.ApplicationServices.GetService<WebSocketNotificationsRelay>());
                             app.UseMetricServer();
                             app.UseMvc();
-
                         });
 
                         logger.Info(() => $"Prometheus Metrics {address}:{port}/metrics");
@@ -732,6 +733,8 @@ namespace Miningcore
             if(string.IsNullOrEmpty(pgConfig.User))
                 logger.ThrowLogPoolStartupException("Postgres configuration: invalid or missing 'user'");
 
+            //AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
             // build connection string
             var connectionString = $"Server={pgConfig.Host};Port={pgConfig.Port};Database={pgConfig.Database};User Id={pgConfig.User};Password={pgConfig.Password};CommandTimeout=900;";
 
@@ -742,7 +745,7 @@ namespace Miningcore
             // register repositories
             builder.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
                 .Where(t =>
-                    t.Namespace.StartsWith(typeof(ShareRepository).Namespace))
+                    t?.Namespace?.StartsWith(typeof(ShareRepository).Namespace) == true)
                 .AsImplementedInterfaces()
                 .SingleInstance();
         }
@@ -756,7 +759,7 @@ namespace Miningcore
             // register repositories
             builder.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
                 .Where(t =>
-                    t.Namespace.StartsWith(typeof(ShareRepository).Namespace))
+                    t?.Namespace?.StartsWith(typeof(ShareRepository).Namespace) == true)
                 .AsImplementedInterfaces()
                 .SingleInstance();
         }
